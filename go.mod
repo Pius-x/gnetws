@@ -1,4 +1,4 @@
-module gnet-ws
+module gnetws
 
 go 1.20
 
