@@ -1,4 +1,4 @@
-package main
+package gnetws
 
 import (
 	"fmt"
