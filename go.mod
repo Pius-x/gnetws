@@ -1,4 +1,4 @@
-module gnetws
+module github.com/Pius-x/gnetws
 
 go 1.20
 
