@@ -1,15 +1,14 @@
 // Copyright 2022 gqzcl <gqzcl@qq.com>. All rights reserved.
 // Use of this source code is governed by a MIT style
 
-package websocket
+package main
 
 import (
 	"context"
 	"fmt"
 	"time"
 
-	"gnet-ws/utils"
-
+	"github.com/Pius-x/gnetws/utils"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/google/uuid"
