@@ -4,27 +4,31 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/gobwas/ws/wsutil"
 	"github.com/panjf2000/gnet/v2"
 )
 
 func TestRun(t *testing.T) {
 
-	Run(
-		Address("tcp", 7700),
+	svr := Run(
+		Address("tcp", ":7788"),
 		OnConnectHandle(ConnectHandler),
 		OnMessageHandle(MessageHandler),
 		OnCloseHandle(CloseHandler),
 		OnTickHandle(TickHandler),
+		WithMaxConn(100000),
 	)
+
+	svr.Start()
 }
 
-func ConnectHandler(c gnet.Conn, ctx *WsContext) {
+func ConnectHandler(c gnet.Conn, ctx *WsCodec) {
 
 	fmt.Println("ConnectHandler", c, ctx)
 
 }
 
-func MessageHandler(c gnet.Conn, message []byte) error {
+func MessageHandler(c gnet.Conn, message wsutil.Message) error {
 	fmt.Println("MessageHandler", c, message)
 	return nil
 }
