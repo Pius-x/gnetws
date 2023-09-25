@@ -9,7 +9,6 @@ import (
 	"github.com/gobwas/ws/wsutil"
 	"github.com/google/uuid"
 	"github.com/panjf2000/gnet/v2"
-	"github.com/panjf2000/gnet/v2/pkg/logging"
 )
 
 type WsCodec struct {
@@ -38,23 +37,19 @@ func (w *WsCodec) upgrade(c gnet.Conn) (ok bool, action gnet.Action) {
 	buf := &w.buf
 	tmpReader := bytes.NewReader(buf.Bytes())
 	oldLen := tmpReader.Len()
-	logging.Infof("do Upgrade")
 
-	hs, err := ws.Upgrade(readWrite{tmpReader, c})
+	_, err := ws.Upgrade(readWrite{tmpReader, c})
 	skipN := oldLen - tmpReader.Len()
 	if err != nil {
 		if err == io.EOF || err == io.ErrUnexpectedEOF { //数据不完整
 			return
 		}
 		buf.Next(skipN)
-		logging.Infof("conn[%v] [err=%v]", c.RemoteAddr().String(), err.Error())
 		action = gnet.Close
 		return
 	}
 	buf.Next(skipN)
-	logging.Infof("conn[%v] upgrade websocket protocol! Handshake: %v", c.RemoteAddr().String(), hs)
 	if err != nil {
-		logging.Infof("conn[%v] [err=%v]", c.RemoteAddr().String(), err.Error())
 		action = gnet.Close
 		return
 	}
@@ -69,21 +64,17 @@ func (w *WsCodec) readBufferBytes(c gnet.Conn) gnet.Action {
 	buf := make([]byte, size, size)
 	read, err := c.Read(buf)
 	if err != nil {
-		logging.Infof("read err! %w", err)
 		return gnet.Close
 	}
 	if read < size {
-		logging.Infof("read bytes len err! size: %d read: %d", size, read)
 		return gnet.Close
 	}
 	w.buf.Write(buf)
 	return gnet.None
 }
 func (w *WsCodec) Decode(c gnet.Conn) (outs []wsutil.Message, err error) {
-	fmt.Println("do Decode")
 	messages, err := w.readWsMessages()
 	if err != nil {
-		logging.Infof("Error reading message! %v", err)
 		return nil, err
 	}
 	if messages == nil || len(messages) <= 0 { //没有读到完整数据 不处理
@@ -148,7 +139,6 @@ func (w *WsCodec) readWsMessages() (messages []wsutil.Message, err error) {
 				}
 			} else { //数据不完整
 				fmt.Println(in.Len(), dataLen)
-				logging.Infof("incomplete data")
 				return
 			}
 		}
@@ -159,7 +149,6 @@ func (w *WsCodec) readWsMessages() (messages []wsutil.Message, err error) {
 			}
 			msgBuf.cachedBuf.Reset()
 		} else {
-			logging.Infof("The data is split into multiple frames")
 		}
 		msgBuf.curHeader = nil
 	}

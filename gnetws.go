@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Pius-x/gnetws/utils"
 	"github.com/panjf2000/gnet/v2"
 	"github.com/panjf2000/gnet/v2/pkg/logging"
 	antsPool "github.com/panjf2000/gnet/v2/pkg/pool/goroutine"
@@ -85,83 +86,111 @@ func (wss *WsServer) OnBoot(eng gnet.Engine) gnet.Action {
 }
 
 func (wss *WsServer) OnOpen(c gnet.Conn) ([]byte, gnet.Action) {
-	if wss.eng.CountConnections() > wss.maxConn {
-		logging.Warnf("Conn num out of maximum, Current conn num : %d", wss.eng.CountConnections())
+	err := utils.Try(func() error {
+		if wss.eng.CountConnections() > wss.maxConn {
+			logging.Warnf("Conn num out of maximum, Current conn num : %d", wss.eng.CountConnections())
+			return errors.New("out of maximum")
+		}
+		c.SetContext(new(WsCodec))
+		return nil
+	})
+
+	if err != nil {
 		return []byte("out of maximum"), gnet.Close
 	}
-	c.SetContext(new(WsCodec))
+
 	return nil, gnet.None
 }
 
 func (wss *WsServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
-	if err != nil {
-		logging.Warnf("error occurred on connection=%wss, %v\n", c.RemoteAddr().String(), err)
-	}
+	err = utils.Try(func() error {
+		logging.Infof("conn[%v] disconnected", c.RemoteAddr().String())
 
-	if wss.onCloseHandler != nil {
-		wss.onCloseHandler(c)
+		if err != nil {
+			logging.Warnf("error occurred on connection=%s, %v\n", c.RemoteAddr().String(), err)
+			return err
+		}
+
+		if wss.onCloseHandler != nil {
+			wss.onCloseHandler(c)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return gnet.Close
 	}
-	logging.Infof("conn[%v] disconnected", c.RemoteAddr().String())
 	return gnet.None
 }
 
 func (wss *WsServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
-	logging.Warnf("Current conn num : %d", wss.eng.CountConnections())
 
-	ws := c.Context().(*WsCodec)
-	if ws.readBufferBytes(c) == gnet.Close {
-		return gnet.Close
-	}
-
-	if !ws.upgraded {
-		var ok bool
-		ok, action = ws.upgrade(c)
-		if !ok {
-			return
-		}
-		if wss.onConnectHandler != nil {
-			wss.onConnectHandler(c, ws)
-		}
-	}
-
-	if ws.buf.Len() <= 0 {
-		return gnet.None
-	}
-	messages, err := ws.Decode(c)
-	if err != nil {
-		return gnet.Close
-	}
-	if messages == nil {
-		return
-	}
-	for _, message := range messages {
-		msgLen := len(message.Payload)
-		if msgLen > 128 {
-			logging.Infof("conn[%v] receive [op=%v] [msg=%v..., len=%d]", c.RemoteAddr().String(), message.OpCode, string(message.Payload[:128]), len(message.Payload))
-		} else {
-			logging.Infof("conn[%v] receive [op=%v] [msg=%v, len=%d]", c.RemoteAddr().String(), message.OpCode, string(message.Payload), len(message.Payload))
+	err := utils.Try(func() error {
+		ws := c.Context().(*WsCodec)
+		if ws.readBufferBytes(c) == gnet.Close {
+			return errors.New("readBufferBytes closed")
 		}
 
-		if wss.onMessageHandler != nil {
-			err = wss.workerPool.Submit(func() {
-				if err = wss.onMessageHandler(c, message); err != nil {
-					fmt.Println("onMessageHandler Err", err)
-				}
-			})
-			if err != nil {
-				fmt.Println("errerrerrerrerrerrerrerrerrerrerrerrerrerrerrerrerrerr", err)
-				return gnet.Close
+		if !ws.upgraded {
+			var ok bool
+			ok, action = ws.upgrade(c)
+			if !ok {
+				return nil
+			}
+			if wss.onConnectHandler != nil {
+				wss.onConnectHandler(c, ws)
 			}
 		}
+
+		if ws.buf.Len() <= 0 {
+			return nil
+		}
+		messages, err := ws.Decode(c)
+		if err != nil {
+			return err
+		}
+		if messages == nil {
+			return nil
+		}
+		for _, message := range messages {
+			//msgLen := len(message.Payload)
+			//if msgLen > 128 {
+			//	logging.Infof("conn[%v] receive [op=%v] [msg=%v..., len=%d]", c.RemoteAddr().String(), message.OpCode, string(message.Payload[:128]), len(message.Payload))
+			//} else {
+			//	logging.Infof("conn[%v] receive [op=%v] [msg=%v, len=%d]", c.RemoteAddr().String(), message.OpCode, string(message.Payload), len(message.Payload))
+			//}
+
+			if wss.onMessageHandler != nil {
+				return wss.workerPool.Submit(func() {
+					if err = wss.onMessageHandler(c, message); err != nil {
+						logging.Error(err)
+					}
+				})
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return gnet.Close
 	}
 	return gnet.None
 }
 
 func (wss *WsServer) OnTick() (delay time.Duration, action gnet.Action) {
-	logging.Infof("[connected-count=%v]", wss.eng.CountConnections())
-	if wss.onTickHandler != nil {
-		wss.onTickHandler()
-	}
+	err := utils.Try(func() error {
+		logging.Infof("[connected-count=%v]", wss.eng.CountConnections())
+		if wss.onTickHandler != nil {
+			wss.onTickHandler()
+		}
 
+		return nil
+	})
+
+	if err != nil {
+		return wss.tickTime, gnet.Close
+	}
 	return wss.tickTime, gnet.None
 }
