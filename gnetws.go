@@ -108,7 +108,6 @@ func (wss *WsServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 
 		if err != nil {
 			logging.Warnf("error occurred on connection=%s, %v\n", c.RemoteAddr().String(), err)
-			return err
 		}
 
 		if wss.onCloseHandler != nil {
