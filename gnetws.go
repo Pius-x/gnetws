@@ -5,7 +5,6 @@ package gnetws
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/Pius-x/gnetws/utils"
@@ -67,15 +66,17 @@ func (wss *WsServer) Start() {
 	}
 }
 
-func (wss *WsServer) Stop() {
+func (wss *WsServer) Stop(ctx context.Context) {
 
 	// 设置服务器超时时间
-	ctx, cancel := context.WithTimeout(context.Background(), wss.stopTimeout)
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, wss.stopTimeout)
+
 	defer func() {
 		logging.Infof("[websocket] server stopping")
 		cancel()
 	}()
-	fmt.Println("Ws svr Stop....")
+
 	_ = wss.eng.Stop(ctx)
 }
 
