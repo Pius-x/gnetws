@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/panjf2000/gnet/v2"
+	"go.uber.org/zap"
 )
 
 type ServerOption func(o *WsServer)
@@ -21,6 +22,12 @@ func Address(network, port string) ServerOption {
 func WithMaxConn(maxConn int) ServerOption {
 	return func(s *WsServer) {
 		s.maxConn = maxConn
+	}
+}
+
+func WithLogger(logger *zap.Logger) ServerOption {
+	return func(s *WsServer) {
+		s.logger = logger
 	}
 }
 

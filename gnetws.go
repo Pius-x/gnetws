@@ -5,14 +5,15 @@ package gnetws
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/Pius-x/gnetws/utils"
+	"github.com/google/uuid"
 	"github.com/panjf2000/gnet/v2"
-	"github.com/panjf2000/gnet/v2/pkg/logging"
 	antsPool "github.com/panjf2000/gnet/v2/pkg/pool/goroutine"
 	"github.com/pkg/errors"
-	"github.com/samber/lo"
+	"go.uber.org/zap"
 )
 
 type WsServer struct {
@@ -20,6 +21,7 @@ type WsServer struct {
 	eng        gnet.Engine
 	lb         gnet.LoadBalancing
 	workerPool *antsPool.Pool
+	logger     *zap.Logger
 
 	address     string
 	maxConn     int
@@ -45,6 +47,7 @@ func Run(opts ...ServerOption) *WsServer {
 		lb:         gnet.LeastConnections,
 		workerPool: antsPool.Default(),
 	}
+	srv.logger, _ = zap.NewProduction()
 
 	for _, opt := range opts {
 		opt(srv)
@@ -57,7 +60,7 @@ func (wss *WsServer) Start() {
 	err := gnet.Run(wss, wss.address,
 		gnet.WithMulticore(true),
 		gnet.WithReusePort(true),
-		gnet.WithTicker(lo.Ternary(wss.tickTime > 0, true, false)),
+		gnet.WithTicker(wss.tickTime > 0),
 		gnet.WithLoadBalancing(wss.lb),
 	)
 
@@ -73,7 +76,7 @@ func (wss *WsServer) Stop(ctx context.Context) {
 	ctx, cancel = context.WithTimeout(ctx, wss.stopTimeout)
 
 	defer func() {
-		logging.Infof("[websocket] server stopping")
+		wss.logger.Warn("[websocket] server stopping")
 		cancel()
 	}()
 
@@ -82,22 +85,22 @@ func (wss *WsServer) Stop(ctx context.Context) {
 
 func (wss *WsServer) OnBoot(eng gnet.Engine) gnet.Action {
 	wss.eng = eng
-	logging.Infof("ws server listening on %s", wss.address)
+	wss.logger.Info(fmt.Sprintf("ws server listening on %s", wss.address))
 	return gnet.None
 }
 
 func (wss *WsServer) OnOpen(c gnet.Conn) ([]byte, gnet.Action) {
 	err := utils.Try(func() error {
 		if wss.eng.CountConnections() > wss.maxConn {
-			logging.Warnf("Conn num out of maximum, Current conn num : %d", wss.eng.CountConnections())
-			return errors.New("out of maximum")
+			return errors.New(fmt.Sprintf("out of maximum, cur conn is: %d", wss.eng.CountConnections()))
 		}
-		c.SetContext(new(WsCodec))
+		c.SetContext(&WsCodec{connTime: time.Now(), Uuid: uuid.NewString()})
 		return nil
 	})
 
 	if err != nil {
-		return []byte("out of maximum"), gnet.Close
+		wss.logger.Error("OnOpen Err", zap.Error(err))
+		return []byte(err.Error()), gnet.Close
 	}
 
 	return nil, gnet.None
@@ -105,10 +108,17 @@ func (wss *WsServer) OnOpen(c gnet.Conn) ([]byte, gnet.Action) {
 
 func (wss *WsServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	err = utils.Try(func() error {
-		logging.Infof("conn[%v] disconnected", c.RemoteAddr().String())
+		ws := c.Context().(*WsCodec)
+
+		wss.logger.Info(fmt.Sprintf("conn[%v] disconnected", c.RemoteAddr().String()),
+			zap.String("trace_id", ws.Uuid),
+		)
 
 		if err != nil {
-			logging.Warnf("error occurred on connection=%s, %v\n", c.RemoteAddr().String(), err)
+			wss.logger.Warn(fmt.Sprintf("conn[%v] disconnect err", c.RemoteAddr().String()),
+				zap.Error(err),
+				zap.String("trace_id", ws.Uuid),
+			)
 		}
 
 		if wss.onCloseHandler != nil {
@@ -141,6 +151,10 @@ func (wss *WsServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 			if wss.onConnectHandler != nil {
 				wss.onConnectHandler(c, ws)
 			}
+			wss.logger.Info(fmt.Sprintf("conn[%v] connected", c.RemoteAddr().String()),
+				zap.Int64("latency", time.Since(ws.connTime).Milliseconds()),
+				zap.String("trace_id", ws.Uuid),
+			)
 		}
 
 		if ws.buf.Len() <= 0 {
@@ -154,17 +168,13 @@ func (wss *WsServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 			return nil
 		}
 		for _, message := range messages {
-			//msgLen := len(message.Payload)
-			//if msgLen > 128 {
-			//	logging.Infof("conn[%v] receive [op=%v] [msg=%v..., len=%d]", c.RemoteAddr().String(), message.OpCode, string(message.Payload[:128]), len(message.Payload))
-			//} else {
-			//	logging.Infof("conn[%v] receive [op=%v] [msg=%v, len=%d]", c.RemoteAddr().String(), message.OpCode, string(message.Payload), len(message.Payload))
-			//}
-
 			if wss.onMessageHandler != nil {
 				return wss.workerPool.Submit(func() {
 					if err = wss.onMessageHandler(c, message); err != nil {
-						logging.Error(err)
+						wss.logger.Error("onMessageHandler Err",
+							zap.Error(err),
+							zap.String("trace_id", ws.Uuid),
+						)
 					}
 				})
 			}
@@ -181,7 +191,7 @@ func (wss *WsServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 
 func (wss *WsServer) OnTick() (delay time.Duration, action gnet.Action) {
 	err := utils.Try(func() error {
-		logging.Infof("[connected-count=%v]", wss.eng.CountConnections())
+		wss.logger.Info(fmt.Sprintf("[connected-count= %v]", wss.eng.CountConnections()))
 		if wss.onTickHandler != nil {
 			wss.onTickHandler()
 		}

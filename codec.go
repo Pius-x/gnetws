@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
-	"github.com/google/uuid"
 	"github.com/panjf2000/gnet/v2"
 )
 
 type WsCodec struct {
+	connTime time.Time    // 建立连接的时间
 	upgraded bool         // 链接是否升级
 	buf      bytes.Buffer // 从实际socket中读取到的数据缓存
 	wsMsgBuf wsMessageBuf // ws 消息缓存
@@ -55,7 +56,6 @@ func (w *WsCodec) upgrade(c gnet.Conn) (ok bool, action gnet.Action) {
 	}
 	ok = true
 	w.upgraded = true
-	w.Uuid = uuid.NewString()
 
 	return
 }
