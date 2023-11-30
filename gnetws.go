@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Pius-x/gnetws/utils"
+	"github.com/Pius-x/gnetws/zaplog"
 	"github.com/google/uuid"
 	"github.com/panjf2000/gnet/v2"
 	antsPool "github.com/panjf2000/gnet/v2/pkg/pool/goroutine"
@@ -99,7 +100,7 @@ func (wss *WsServer) OnOpen(c gnet.Conn) ([]byte, gnet.Action) {
 	})
 
 	if err != nil {
-		wss.logger.Error("OnOpen Err", zap.Error(err))
+		wss.logger.Error("OnOpen Err", zaplog.AppendErr(err)...)
 		return []byte(err.Error()), gnet.Close
 	}
 
@@ -111,13 +112,12 @@ func (wss *WsServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 		ws := c.Context().(*WsCodec)
 
 		wss.logger.Info(fmt.Sprintf("conn[%v] disconnected", c.RemoteAddr().String()),
-			zap.String("trace_id", ws.Uuid),
+			zap.String(zaplog.TraceId, ws.Uuid),
 		)
 
 		if err != nil {
 			wss.logger.Warn(fmt.Sprintf("conn[%v] disconnect err", c.RemoteAddr().String()),
-				zap.Error(err),
-				zap.String("trace_id", ws.Uuid),
+				zaplog.AppendErr(err, zap.String(zaplog.TraceId, ws.Uuid))...,
 			)
 		}
 
@@ -152,8 +152,8 @@ func (wss *WsServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 				wss.onConnectHandler(c, ws)
 			}
 			wss.logger.Info(fmt.Sprintf("conn[%v] connected", c.RemoteAddr().String()),
-				zap.Int64("latency", time.Since(ws.connTime).Milliseconds()),
-				zap.String("trace_id", ws.Uuid),
+				zap.Int64(zaplog.Latency, time.Since(ws.connTime).Milliseconds()),
+				zap.String(zaplog.TraceId, ws.Uuid),
 			)
 		}
 
@@ -172,8 +172,7 @@ func (wss *WsServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 				return wss.workerPool.Submit(func() {
 					if err = wss.onMessageHandler(c, message); err != nil {
 						wss.logger.Error("onMessageHandler Err",
-							zap.Error(err),
-							zap.String("trace_id", ws.Uuid),
+							zaplog.AppendErr(err, zap.String(zaplog.TraceId, ws.Uuid))...,
 						)
 					}
 				})
@@ -198,7 +197,7 @@ func (wss *WsServer) OnTick() (delay time.Duration, action gnet.Action) {
 
 		return nil
 	})
-
+	wss.logger.Error("OnOpen Err", zaplog.AppendErr(errors.New("rrrr"))...)
 	if err != nil {
 		return wss.tickTime, gnet.Close
 	}
