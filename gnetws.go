@@ -197,7 +197,7 @@ func (wss *WsServer) OnTick() (delay time.Duration, action gnet.Action) {
 
 		return nil
 	})
-	wss.logger.Error("OnOpen Err", zaplog.AppendErr(errors.New("rrrr"))...)
+
 	if err != nil {
 		return wss.tickTime, gnet.Close
 	}
